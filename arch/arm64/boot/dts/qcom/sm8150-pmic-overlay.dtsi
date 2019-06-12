@@ -15,7 +15,6 @@
 #include "pm8150b.dtsi"
 #include "pm8150l.dtsi"
 #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
-#include <dt-bindings/gpio/gpio.h>
 
 /* PMIC GPIO pin control configurations: */
 &pm8150_gpios {
@@ -124,6 +123,27 @@
 			output-disable;
 			bias-pull-down;
 			power-source = <0>;
+		};
+	};
+
+	otg_vbus_boost {
+		otg_vbus_boost_default: otg_vbus_boost_default {
+			pins = "gpio12";
+			function = "normal";
+			output-low;
+			power-source = <0>;
+		};
+	};
+
+	power_good {
+		/*Get the DC Power Good signal*/
+		power_good_default: power_good_default {
+			pins = "gpio7";
+			function = "normal";
+			qcom,drive-strength = <2>; /* 2 MA */
+			bias-disable;         /* NO pull */
+			power-source = <1>;
+			input-enable;
 		};
 	};
 };
