@@ -155,13 +155,13 @@ static bool cp_ilim_boost_enabled(struct pl_data *chip)
 	return pval.intval == POWER_SUPPLY_PL_OUTPUT_VPH;
 }
 
-static void cp_configure_ilim(struct pl_data *chip, const char *voter, int ilim)
+static void cp_configure_ilim(struct pl_data *chip, const char *voter, bool state, int ilim)
 {
 	if (!chip->cp_ilim_votable)
 		chip->cp_ilim_votable = find_votable("CP_ILIM");
 
 	if (!cp_ilim_boost_enabled(chip) && chip->cp_ilim_votable)
-		vote(chip->cp_ilim_votable, voter, true, ilim);
+		vote(chip->cp_ilim_votable, voter, state, ilim);
 }
 
 /*******
@@ -633,25 +633,6 @@ static void pl_taper_work(struct work_struct *work)
 			goto done;
 		}
 
-		/*
-		 * Due to reduction of float voltage in JEITA condition taper
-		 * charging can be initiated at a lower FV. On removal of JEITA
-		 * condition, FV readjusts itself. However, once taper charging
-		 * is initiated, it doesn't exits until parallel chaging is
-		 * disabled due to which FCC doesn't scale back to its original
-		 * value, leading to slow charging thereafter.
-		 * Check if FV increases in comparison to FV at which taper
-		 * charging was initiated, and if yes, exit taper charging.
-		 */
-		if (get_effective_result(chip->fv_votable) >
-						chip->taper_entry_fv) {
-			pl_dbg(chip, PR_PARALLEL, "Float voltage increased. Exiting taper\n");
-			goto done;
-		} else {
-			chip->taper_entry_fv =
-					get_effective_result(chip->fv_votable);
-		}
-
 		rc = power_supply_get_property(chip->batt_psy,
 				       POWER_SUPPLY_PROP_CHARGE_TYPE, &pval);
 		if (rc < 0) {
@@ -678,7 +659,25 @@ static void pl_taper_work(struct work_struct *work)
 			vote(chip->fcc_votable, TAPER_STEPPER_VOTER,
 					true, fcc_ua);
 		} else {
-			pl_dbg(chip, PR_PARALLEL, "master is fast charging; waiting for next taper\n");
+			/*
+			 * Due to reduction of float voltage in JEITA condition
+			 * taper charging can be initiated at a lower FV. On
+			 * removal of JEITA condition, FV readjusts itself.
+			 * However, once taper charging is initiated, it doesn't
+			 * exits until parallel chaging is disabled due to which
+			 * FCC doesn't scale back to its original value, leading
+			 * to slow charging thereafter.
+			 * Check if FV increases in comparison to FV at which
+			 * taper charging was initiated, and if yes, exit taper
+			 * charging.
+			 */
+			if (get_effective_result(chip->fv_votable) >
+						chip->taper_entry_fv) {
+				pl_dbg(chip, PR_PARALLEL, "Float voltage increased. Exiting taper\n");
+				goto done;
+			} else {
+				pl_dbg(chip, PR_PARALLEL, "master is fast charging; waiting for next taper\n");
+			}
 		}
 
 		/* wait for the charger state to deglitch after FCC change */
@@ -920,7 +919,7 @@ stepper_exit:
 	chip->main_fcc_ua = main_fcc;
 	chip->slave_fcc_ua = parallel_fcc;
 
-	cp_configure_ilim(chip, FCC_VOTER, chip->main_fcc_ua / 2);
+	cp_configure_ilim(chip, FCC_VOTER, true, chip->main_fcc_ua / 2);
 
 	if (reschedule_ms) {
 		schedule_delayed_work(&chip->fcc_stepper_work,
@@ -1037,7 +1036,19 @@ static int usb_icl_vote_callback(struct votable *votable, void *data,
 
 	vote(chip->pl_disable_votable, ICL_CHANGE_VOTER, false, 0);
 
-	cp_configure_ilim(chip, ICL_CHANGE_VOTER, icl_ua);
+	if (!chip->usb_psy)
+		chip->usb_psy = power_supply_get_by_name("usb");
+
+	rc = power_supply_get_property(chip->usb_psy,
+				POWER_SUPPLY_PROP_SMB_EN_REASON, &pval);
+	if (rc < 0) {
+		pr_err("Couldn't get cp reason rc=%d\n", rc);
+		return rc;
+	}
+
+	if (chip->cp_ilim_votable) {
+		cp_configure_ilim(chip, ICL_CHANGE_VOTER, true, icl_ua);
+	}
 
 	return 0;
 }
@@ -1297,7 +1308,7 @@ static int pl_disable_vote_callback(struct votable *votable,
 				return rc;
 			}
 
-			cp_configure_ilim(chip, FCC_VOTER, total_fcc_ua / 2);
+			cp_configure_ilim(chip, FCC_VOTER, true, total_fcc_ua / 2);
 
 			/* reset parallel FCC */
 			chip->slave_fcc_ua = 0;
