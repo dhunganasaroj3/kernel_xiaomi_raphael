@@ -147,6 +147,10 @@ ifdef CONFIG_VOICE_MHI
 	Q6_OBJS += voice_mhi.o
 endif
 
+ifdef CONFIG_MSM_CSPL
+	Q6_OBJS += msm-cirrus-playback.o
+endif
+
 LINUX_INC +=	-Iinclude/linux
 
 INCS +=		$(COMMON_INC) \

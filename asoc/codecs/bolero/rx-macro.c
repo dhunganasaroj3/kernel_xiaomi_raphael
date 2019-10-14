@@ -828,7 +828,7 @@ static int rx_macro_set_prim_interpolator_rate(struct snd_soc_dai *dai,
 			int_mux_cfg1_val = snd_soc_read(codec, int_mux_cfg1);
 			inp0_sel = int_mux_cfg0_val & 0x07;
 			inp1_sel = (int_mux_cfg0_val >> 4) & 0x038;
-			inp2_sel = (int_mux_cfg1_val >> 4) & 0x038;
+			inp2_sel = (int_mux_cfg1_val >> 4) & 0x038	;
 			if ((inp0_sel == int_1_mix1_inp) ||
 			    (inp1_sel == int_1_mix1_inp) ||
 			    (inp2_sel == int_1_mix1_inp)) {
