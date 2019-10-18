@@ -48,6 +48,10 @@
 #include "msm-dolby-dap-config.h"
 #include "msm-ds2-dap-config.h"
 
+#ifdef CONFIG_SND_SOC_TFA9874_FOR_DAVI
+#include "codecs/tfa98xx/tfa_platform_interface_definition.h"
+#endif
+
 #ifdef CONFIG_MSM_CSPL
 #include <dsp/msm-cirrus-playback.h>
 #endif
@@ -18109,7 +18113,11 @@ static const char * const wsa_rx_0_vi_fb_tx_rch_mux_text[] = {
 };
 
 static const char * const mi2s_rx_vi_fb_tx_mux_text[] = {
+#ifdef CONFIG_SND_SOC_TFA9874_FOR_DAVI
+	"ZERO", PLATFORM_RX_VI_FB_TX_MUX_TEXT
+#else
 	"ZERO", "SENARY_TX"
+#endif
 };
 
 static const char * const int4_mi2s_rx_vi_fb_tx_mono_mux_text[] = {
@@ -18138,7 +18146,11 @@ static const int wsa_rx_0_vi_fb_tx_rch_value[] = {
 
 
 static const int mi2s_rx_vi_fb_tx_value[] = {
+#ifdef CONFIG_SND_SOC_TFA9874_FOR_DAVI
+	MSM_BACKEND_DAI_MAX, PLATFORM_RX_VI_FB_TX_VALUE
+#else
 	MSM_BACKEND_DAI_MAX, MSM_BACKEND_DAI_SENARY_MI2S_TX
+#endif
 };
 
 static const int int4_mi2s_rx_vi_fb_tx_mono_ch_value[] = {
@@ -18170,7 +18182,11 @@ static const struct soc_enum wsa_rx_0_vi_fb_rch_mux_enum =
 	wsa_rx_0_vi_fb_tx_rch_mux_text, wsa_rx_0_vi_fb_tx_rch_value);
 
 static const struct soc_enum mi2s_rx_vi_fb_mux_enum =
+#ifdef CONFIG_SND_SOC_TFA9874_FOR_DAVI
+	SOC_VALUE_ENUM_DOUBLE(0, PLATFORM_RX_VI_FB_MUX_ENUM, 0, 0,
+#else
 	SOC_VALUE_ENUM_DOUBLE(0, MSM_BACKEND_DAI_PRI_MI2S_RX, 0, 0,
+#endif
 	ARRAY_SIZE(mi2s_rx_vi_fb_tx_mux_text),
 	mi2s_rx_vi_fb_tx_mux_text, mi2s_rx_vi_fb_tx_value);
 
@@ -18207,7 +18223,11 @@ static const struct snd_kcontrol_new wsa_rx_0_vi_fb_rch_mux =
 	spkr_prot_put_vi_rch_port);
 
 static const struct snd_kcontrol_new mi2s_rx_vi_fb_mux =
+#ifdef CONFIG_SND_SOC_TFA9874_FOR_DAVI
+	SOC_DAPM_ENUM_EXT(PLATFORM_RX_VI_FB_MUX_NAME,
+#else
 	SOC_DAPM_ENUM_EXT("PRI_MI2S_RX_VI_FB_MUX",
+#endif
 	mi2s_rx_vi_fb_mux_enum, spkr_prot_get_vi_lch_port,
 	spkr_prot_put_vi_lch_port);
 
@@ -19571,7 +19591,11 @@ static const struct snd_soc_dapm_widget msm_qdsp6_widgets[] = {
 				&wsa_rx_0_vi_fb_lch_mux),
 	SND_SOC_DAPM_MUX("WSA_RX_0_VI_FB_RCH_MUX", SND_SOC_NOPM, 0, 0,
 				&wsa_rx_0_vi_fb_rch_mux),
+#ifdef CONFIG_SND_SOC_TFA9874_FOR_DAVI
+	SND_SOC_DAPM_MUX(PLATFORM_RX_VI_FB_MUX_NAME, SND_SOC_NOPM, 0, 0,
+#else
 	SND_SOC_DAPM_MUX("PRI_MI2S_RX_VI_FB_MUX", SND_SOC_NOPM, 0, 0,
+#endif
 				&mi2s_rx_vi_fb_mux),
 	SND_SOC_DAPM_MUX("INT4_MI2S_RX_VI_FB_MONO_CH_MUX", SND_SOC_NOPM, 0, 0,
 				&int4_mi2s_rx_vi_fb_mono_ch_mux),
@@ -22086,7 +22110,11 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"INT0_MI2S_RX", NULL, "INT0_MI2S_RX_DL_HL"},
 	{"INT4_MI2S_RX_DL_HL", "Switch", "INT4_MI2S_DL_HL"},
 	{"INT4_MI2S_RX", NULL, "INT4_MI2S_RX_DL_HL"},
+#ifdef CONFIG_SND_SOC_TFA9874_FOR_DAVI
+	{"PRI_MI2S_RX_DL_HL", "Switch", "CDC_DMA_DL_HL"},
+#else
 	{"PRI_MI2S_RX_DL_HL", "Switch", "PRI_MI2S_DL_HL"},
+#endif
 	{"PRI_MI2S_RX", NULL, "PRI_MI2S_RX_DL_HL"},
 	{"SEC_MI2S_RX_DL_HL", "Switch", "SEC_MI2S_DL_HL"},
 	{"SEC_MI2S_RX", NULL, "SEC_MI2S_RX_DL_HL"},
@@ -22978,14 +23006,22 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"SLIM0_RX_VI_FB_RCH_MUX", "SLIM4_TX", "SLIMBUS_4_TX"},
 	{"WSA_RX_0_VI_FB_LCH_MUX", "WSA_CDC_DMA_TX_0", "WSA_CDC_DMA_TX_0"},
 	{"WSA_RX_0_VI_FB_RCH_MUX", "WSA_CDC_DMA_TX_0", "WSA_CDC_DMA_TX_0"},
+#ifdef CONFIG_SND_SOC_TFA9874_FOR_DAVI
+	{PLATFORM_RX_VI_FB_MUX_NAME, PLATFORM_RX_VI_FB_TX_MUX_TEXT, PLATFORM_RX_VI_FB_TX_MUX_TEXT},
+#else
 	{"PRI_MI2S_RX_VI_FB_MUX", "SENARY_TX", "SENARY_TX"},
+#endif
 	{"INT4_MI2S_RX_VI_FB_MONO_CH_MUX", "INT5_MI2S_TX", "INT5_MI2S_TX"},
 	{"INT4_MI2S_RX_VI_FB_STEREO_CH_MUX", "INT5_MI2S_TX", "INT5_MI2S_TX"},
 	{"SLIMBUS_0_RX", NULL, "SLIM0_RX_VI_FB_LCH_MUX"},
 	{"SLIMBUS_0_RX", NULL, "SLIM0_RX_VI_FB_RCH_MUX"},
 	{"WSA_CDC_DMA_RX_0", NULL, "WSA_RX_0_VI_FB_LCH_MUX"},
 	{"WSA_CDC_DMA_RX_0", NULL, "WSA_RX_0_VI_FB_RCH_MUX"},
+#ifdef CONFIG_SND_SOC_TFA9874_FOR_DAVI
+	{PLATFORM_RX_VI_FB_RX_MUX_TEXT, NULL, PLATFORM_RX_VI_FB_MUX_NAME},
+#else
 	{"PRI_MI2S_RX", NULL, "PRI_MI2S_RX_VI_FB_MUX"},
+#endif
 	{"INT4_MI2S_RX", NULL, "INT4_MI2S_RX_VI_FB_MONO_CH_MUX"},
 	{"INT4_MI2S_RX", NULL, "INT4_MI2S_RX_VI_FB_STEREO_CH_MUX"},
 	{"PRI_TDM_TX_0", NULL, "BE_IN"},
@@ -23402,11 +23438,6 @@ static uint32_t msm_routing_get_topology(size_t data_size, void *data)
 	uint32_t size = 0;
 
 	/* Retrieve cal_info size from cal data*/
-	if (data_size < sizeof(struct audio_cal_type_basic) +
-			sizeof(struct audio_cal_info_adm_top)) {
-		pr_err("%s: Invalid data size: %zd\n", __func__, data_size);
-		goto done;
-	}
 	size = data_size - sizeof(struct audio_cal_type_basic);
 	cal_info = kzalloc(size, GFP_KERNEL);
 
@@ -23581,38 +23612,6 @@ static const struct snd_kcontrol_new aptx_dec_license_controls[] = {
 	SOC_SINGLE_EXT("APTX Dec License", SND_SOC_NOPM, 0,
 	0xFFFF, 0, msm_aptx_dec_license_control_get,
 	msm_aptx_dec_license_control_put),
-};
-
-static int msm_routing_put_port_chmap_mixer(struct snd_kcontrol *kcontrol,
-					    struct snd_ctl_elem_value *ucontrol)
-{
-	uint8_t channel_map[PCM_FORMAT_MAX_NUM_CHANNEL_V8];
-	uint32_t be_idx = ucontrol->value.integer.value[0];
-	int i;
-
-	if (be_idx >= MSM_BACKEND_DAI_MAX) {
-		pr_err("%s: Invalid Backend index %d\n",  __func__, be_idx);
-		return -EINVAL;
-	}
-
-	for (i = 0; i < PCM_FORMAT_MAX_NUM_CHANNEL_V8; i++) {
-		channel_map[i] = (char)(ucontrol->value.integer.value[i + 1]);
-		if (channel_map[i] > PCM_MAX_CHMAP_ID) {
-			pr_err("%s: Invalid channel map %d\n",
-				__func__, channel_map[i]);
-			return -EINVAL;
-		}
-	}
-	adm_set_port_multi_ch_map(channel_map, msm_bedais[be_idx].port_id);
-
-	return 0;
-}
-
-static const struct snd_kcontrol_new port_multi_channel_map_mixer_controls[] = {
-	SOC_SINGLE_MULTI_EXT("Backend Device Channel Map", SND_SOC_NOPM, 0,
-			MSM_BACKEND_DAI_MAX, 0,
-			PCM_FORMAT_MAX_NUM_CHANNEL_V8 + 1, NULL,
-			msm_routing_put_port_chmap_mixer),
 };
 
 static int msm_routing_be_dai_name_table_info(struct snd_kcontrol *kcontrol,
@@ -23852,10 +23851,6 @@ static int msm_routing_probe(struct snd_soc_platform *platform)
 	snd_soc_add_platform_controls(
 			platform, msm_routing_feature_support_mixer_controls,
 			ARRAY_SIZE(msm_routing_feature_support_mixer_controls));
-	snd_soc_add_platform_controls(platform,
-			port_multi_channel_map_mixer_controls,
-			ARRAY_SIZE(port_multi_channel_map_mixer_controls));
-
 	elliptic_add_platform_controls(platform);
 
 	return 0;
