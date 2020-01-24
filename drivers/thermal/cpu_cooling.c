@@ -1312,9 +1312,9 @@ void cpufreq_cooling_unregister(struct thermal_cooling_device *cdev)
 
 	if (last) {
 		unregister_pm_notifier(&cpufreq_cooling_pm_nb);
-			cpufreq_unregister_notifier(
-					&thermal_cpufreq_notifier_block,
-					CPUFREQ_POLICY_NOTIFIER);
+		cpufreq_unregister_notifier(
+				&thermal_cpufreq_notifier_block,
+				CPUFREQ_POLICY_NOTIFIER);
 	}
 
 	thermal_cooling_device_unregister(cpufreq_cdev->cdev);
