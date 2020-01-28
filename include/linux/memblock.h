@@ -302,6 +302,7 @@ static inline bool memblock_bottom_up(void)
 /* Flags for memblock_alloc_base() amd __memblock_alloc_base() */
 #define MEMBLOCK_ALLOC_ANYWHERE	(~(phys_addr_t)0)
 #define MEMBLOCK_ALLOC_ACCESSIBLE	0
+#define MEMBLOCK_ALLOC_KASAN		1
 
 phys_addr_t __init memblock_alloc_range(phys_addr_t size, phys_addr_t align,
 					phys_addr_t start, phys_addr_t end,
@@ -398,6 +399,11 @@ static inline unsigned long memblock_region_reserved_end_pfn(const struct memblo
 	for (idx = 0, rgn = &memblock_type->regions[0];			\
 	     idx < memblock_type->cnt;					\
 	     idx++, rgn = &memblock_type->regions[idx])
+#define for_each_memblock_rev(memblock_type, region)	\
+	for (region = memblock.memblock_type.regions + \
+			memblock.memblock_type.cnt - 1;	\
+	     region >= memblock.memblock_type.regions;	\
+	     region--)
 
 #ifdef CONFIG_MEMTEST
 extern void early_memtest(phys_addr_t start, phys_addr_t end);
