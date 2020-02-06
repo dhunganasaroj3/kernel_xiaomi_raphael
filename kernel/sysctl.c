@@ -66,6 +66,7 @@
 #include <linux/kexec.h>
 #include <linux/bpf.h>
 #include <linux/mount.h>
+#include <linux/tty.h>
 
 #include <linux/uaccess.h>
 #include <asm/processor.h>
@@ -160,6 +161,9 @@ static const int cap_last_cap = CAP_LAST_CAP;
 #ifdef CONFIG_DETECT_HUNG_TASK
 static unsigned long hung_task_timeout_max = (LONG_MAX/HZ);
 #endif
+
+int device_sidechannel_restrict __read_mostly = 1;
+EXPORT_SYMBOL(device_sidechannel_restrict);
 
 #ifdef CONFIG_INOTIFY_USER
 #include <linux/inotify.h>
@@ -1017,6 +1021,17 @@ static struct ctl_table kern_table[] = {
 		.extra2		= &two,
 	},
 #endif
+#if defined CONFIG_TTY
+	{
+		.procname	= "tiocsti_restrict",
+		.data		= &tiocsti_restrict,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax_sysadmin,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
+#endif
 #ifdef CONFIG_USB
 	{
 		.procname	= "deny_new_usb",
@@ -1028,6 +1043,15 @@ static struct ctl_table kern_table[] = {
 		.extra2		= &one,
 	},
 #endif
+	{
+		.procname	= "device_sidechannel_restrict",
+		.data		= &device_sidechannel_restrict,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax_sysadmin,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
 	{
 		.procname	= "ngroups_max",
 		.data		= &ngroups_max,
