@@ -649,6 +649,7 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	u32 bl_lvl)
 {
 	int rc = 0;
+	u32 bl_temp = 0;
 	struct mipi_dsi_device *dsi;
 
 	if (!panel || (bl_lvl > 0xffff)) {
@@ -656,15 +657,27 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 		return -EINVAL;
 	}
 
+	if (panel->bl_config.bl_remap_flag && panel->bl_config.brightness_max_level
+		&& panel->bl_config.bl_max_level) {
+		/* map UI brightness into driver backlight level
+		*    y = kx+b;
+		*/
+		bl_temp = (panel->bl_config.bl_max_level - panel->bl_config.bl_min_level)*bl_lvl/panel->bl_config.brightness_max_level
+					+ panel->bl_config.bl_min_level;
+		pr_debug("bl_temp %d\n", bl_temp);
+	} else
+		bl_temp = bl_lvl;
+
+	pr_debug("bl_temp %d\n", bl_temp);
 	dsi = &panel->mipi_device;
 
 	if (panel->bl_config.dcs_type_ss)
-		rc = mipi_dsi_dcs_set_display_brightness_ss(dsi, bl_lvl);
+		rc = mipi_dsi_dcs_set_display_brightness_ss(dsi, bl_temp);
 	else
-		rc = mipi_dsi_dcs_set_display_brightness(dsi, bl_lvl);
+		rc = mipi_dsi_dcs_set_display_brightness(dsi, bl_temp);
 
 	if (rc < 0)
-		pr_err("failed to update dcs backlight:%d\n", bl_lvl);
+		pr_err("failed to update dcs backlight:%d\n", bl_temp);
 
 	return rc;
 }
@@ -782,7 +795,6 @@ int dsi_panel_enable_doze_backlight(struct dsi_panel *panel, u32 bl_lvl)
 int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
-	u32 bl_temp = 0;
 	struct dsi_backlight_config *bl = &panel->bl_config;
 
 	if (panel->host_config.ext_bridge_num)
@@ -793,25 +805,15 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	if (0 == bl_lvl)
 		dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_DISP_DIMMINGOFF);
 
-	if (panel->bl_config.bl_remap_flag && panel->bl_config.brightness_max_level
-		&& panel->bl_config.bl_max_level) {
-		/* map UI brightness into driver backlight level
-		*    y = kx+b;
-		*/
-		bl_temp = (panel->bl_config.bl_max_level - panel->bl_config.bl_min_level)*bl_lvl/panel->bl_config.brightness_max_level
-					+ panel->bl_config.bl_min_level;
-	} else
-		bl_temp = bl_lvl;
-
 	switch (bl->type) {
 	case DSI_BACKLIGHT_WLED:
-		rc = backlight_device_set_brightness(bl->raw_bd, bl_temp);
+		rc = backlight_device_set_brightness(bl->raw_bd, bl_lvl);
 		break;
 	case DSI_BACKLIGHT_DCS:
 		if (panel->fod_backlight_flag) {
 			pr_info("fod_backlight_flag set\n");
 		} else {
-			rc = dsi_panel_update_backlight(panel, bl_temp);
+			rc = dsi_panel_update_backlight(panel, bl_lvl);
 		}
 		break;
 	case DSI_BACKLIGHT_EXTERNAL:
