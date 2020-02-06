@@ -38,6 +38,8 @@
 
 #define DSI_MODE_MAX 5
 
+#define BUF_LEN_MAX    256
+
 enum dsi_panel_rotation {
 	DSI_PANEL_ROTATE_NONE = 0,
 	DSI_PANEL_ROTATE_HV_FLIP,
@@ -244,6 +246,8 @@ struct dsi_panel {
 	struct dsi_panel_cmd_set elvss_dimming_offset;
 	struct dsi_panel_cmd_set hbm_fod_on;
 	struct dsi_panel_cmd_set hbm_fod_off;
+
+	u8 panel_read_data[BUF_LEN_MAX];
 
 	bool fod_backlight_flag;
 	u32 fod_target_backlight;
