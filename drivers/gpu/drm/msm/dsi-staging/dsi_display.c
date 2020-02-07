@@ -7523,25 +7523,18 @@ int dsi_display_enable(struct dsi_display *display)
 			return -EINVAL;
 		}
 
-		dsi_panel_acquire_panel_lock(display->panel);
-
 		display->panel->panel_initialized = true;
 		pr_debug("cont splash enabled, display enable not required\n");
 
 		if (panel->elvss_dimming_check_enable) {
 			rc = dsi_display_write_panel(display, &panel->elvss_dimming_offset);
-			if (rc) {
-				dsi_panel_release_panel_lock(display->panel);
-				pr_err("Write elvss_dimming_offset cmds failed, rc=%d\n", rc);
+			if (rc)
 				return 0;
-			}
 
 			rc = dsi_display_read_panel(panel, &panel->elvss_dimming_cmds);
-			if (rc <= 0) {
-				dsi_panel_release_panel_lock(display->panel);
-				pr_err("Read elvss_dimming_cmds failed, rc=%d\n", rc);
+			if (rc <= 0)
 				return 0;
-			}
+
 			pr_info("elvss dimming read result %x\n", panel->elvss_dimming_cmds.rbuf[0]);
 			((u8 *)panel->hbm_fod_on.cmds[4].msg.tx_buf)[1] = (panel->elvss_dimming_cmds.rbuf[0]) & 0x7F;
 			pr_info("fod hbm on change to %x\n", ((u8 *)panel->hbm_fod_on.cmds[4].msg.tx_buf)[1]);
@@ -7549,7 +7542,6 @@ int dsi_display_enable(struct dsi_display *display)
 			pr_info("fod hbm off change to %x\n", ((u8 *)panel->hbm_fod_off.cmds[6].msg.tx_buf)[1]);
 		}
 
-		dsi_panel_release_panel_lock(display->panel);
 		return 0;
 	}
 

@@ -1,4 +1,4 @@
-/*
+ /*
  * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  * Copyright (C) 2019 XiaoMi, Inc.
  *
@@ -32,11 +32,6 @@
 
 #include <linux/msm_drm_notify.h>
 
-#define DSI_READ_WRITE_PANEL_DEBUG 1
-#if DSI_READ_WRITE_PANEL_DEBUG
-#include <linux/proc_fs.h>
-#include <linux/seq_file.h>
-#endif
 
 #include "../../../../../kernel/irq/internals.h"
 
@@ -86,13 +81,6 @@ static struct dsi_panel *g_panel;
 
 int dsi_display_read_panel(struct dsi_panel *panel, struct dsi_read_config *read_config);
 static int string_merge_into_buf(const char *str, int len, char *buf);
-
-static struct dsi_read_config read_reg;
-
-#if DSI_READ_WRITE_PANEL_DEBUG
-static struct proc_dir_entry *mipi_proc_entry = NULL;
-#define MIPI_PROC_NAME "mipi_reg"
-#endif
 
 enum dsi_dsc_ratio_type {
 	DSC_8BPC_8BPP,
@@ -665,6 +653,7 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	u32 bl_lvl)
 {
 	int rc = 0;
+	u32 bl_temp = 0;
 	struct mipi_dsi_device *dsi;
 
 	if (!panel || (bl_lvl > 0xffff)) {
@@ -672,15 +661,27 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 		return -EINVAL;
 	}
 
+	if (panel->bl_config.bl_remap_flag && panel->bl_config.brightness_max_level
+		&& panel->bl_config.bl_max_level) {
+		/* map UI brightness into driver backlight level
+		*    y = kx+b;
+		*/
+		bl_temp = (panel->bl_config.bl_max_level - panel->bl_config.bl_min_level)*bl_lvl/panel->bl_config.brightness_max_level
+					+ panel->bl_config.bl_min_level;
+		pr_debug("bl_temp %d\n", bl_temp);
+	} else
+		bl_temp = bl_lvl;
+
+	pr_debug("bl_temp %d\n", bl_temp);
 	dsi = &panel->mipi_device;
 
 	if (panel->bl_config.dcs_type_ss)
-		rc = mipi_dsi_dcs_set_display_brightness_ss(dsi, bl_lvl);
+		rc = mipi_dsi_dcs_set_display_brightness_ss(dsi, bl_temp);
 	else
-		rc = mipi_dsi_dcs_set_display_brightness(dsi, bl_lvl);
+		rc = mipi_dsi_dcs_set_display_brightness(dsi, bl_temp);
 
 	if (rc < 0)
-		pr_err("failed to update dcs backlight:%d\n", bl_lvl);
+		pr_err("failed to update dcs backlight:%d\n", bl_temp);
 
 	return rc;
 }
@@ -798,7 +799,6 @@ int dsi_panel_enable_doze_backlight(struct dsi_panel *panel, u32 bl_lvl)
 int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
-	u32 bl_temp = 0;
 	struct dsi_backlight_config *bl = &panel->bl_config;
 
 	if (panel->host_config.ext_bridge_num)
@@ -809,25 +809,15 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	if (0 == bl_lvl)
 		dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_DISP_DIMMINGOFF);
 
-	if (panel->bl_config.bl_remap_flag && panel->bl_config.brightness_max_level
-		&& panel->bl_config.bl_max_level) {
-		/* map UI brightness into driver backlight level
-		*    y = kx+b;
-		*/
-		bl_temp = (panel->bl_config.bl_max_level - panel->bl_config.bl_min_level)*bl_lvl/panel->bl_config.brightness_max_level
-					+ panel->bl_config.bl_min_level;
-	} else
-		bl_temp = bl_lvl;
-
 	switch (bl->type) {
 	case DSI_BACKLIGHT_WLED:
-		rc = backlight_device_set_brightness(bl->raw_bd, bl_temp);
+		rc = backlight_device_set_brightness(bl->raw_bd, bl_lvl);
 		break;
 	case DSI_BACKLIGHT_DCS:
 		if (panel->fod_backlight_flag) {
 			pr_debug("fod_backlight_flag set\n");
 		} else {
-			rc = dsi_panel_update_backlight(panel, bl_temp);
+			rc = dsi_panel_update_backlight(panel, bl_lvl);
 		}
 		break;
 	case DSI_BACKLIGHT_EXTERNAL:
@@ -3826,197 +3816,6 @@ error:
 	return rc;
 }
 
-
-ssize_t mipi_reg_write(char *buf, size_t count)
-{
-	struct dsi_panel *panel = g_panel;
-	struct dsi_panel_cmd_set cmd_sets = {0};
-	int retval = 0, dlen = 0;
-	u32 packet_count = 0;
-	char *input = NULL, *data = NULL;
-	char pbuf[3] = {0};
-	u32 tmp_data = 0;
-
-	mutex_lock(&panel->panel_lock);
-
-	if (!panel || !panel->panel_initialized) {
-		pr_err("[LCD] panel not ready!\n");
-		retval = -EAGAIN;
-		goto exit_unlock;
-	}
-
-	input = buf;
-	memcpy(pbuf, input, 2);
-	pbuf[2] = '\0';
-	retval = kstrtou32(pbuf, 10, &tmp_data);
-	if (retval)
-		goto exit_unlock;
-	read_reg.enabled = !!tmp_data;
-	input = input + 3;
-	memcpy(pbuf, input, 2);
-	pbuf[2] = '\0';
-	retval = kstrtou32(pbuf, 10, &tmp_data);
-	if (retval)
-		goto exit_unlock;
-	if (read_reg.enabled && !tmp_data) {
-		retval = -EINVAL;
-		goto exit_unlock;
-	}
-	read_reg.cmds_rlen = tmp_data;
-	input = input + 3;
-
-	data = kzalloc(count - 6, GFP_KERNEL);
-	if (!data) {
-		retval = -ENOMEM;
-		goto exit_unlock;
-	}
-	data[count-6-1] = '\0';
-	dlen = string_merge_into_buf(input, count - 6, data);
-	if (dlen <= 0)
-		goto exit_free1;
-	retval = dsi_panel_get_cmd_pkt_count(data, dlen, &packet_count);
-	if (!packet_count) {
-		pr_err("%s: get pkt count failed!\n", __func__);
-		goto exit_free1;
-	}
-
-	retval = dsi_panel_alloc_cmd_packets(&cmd_sets, packet_count);
-	if (retval) {
-		pr_err("%s: failed to allocate cmd packets, ret=%d\n", __func__, retval);
-		goto exit_free1;
-	}
-
-	retval = dsi_panel_create_cmd_packets(data, dlen, packet_count,
-						  cmd_sets.cmds);
-	if (retval) {
-		pr_err("%s: failed to create cmd packets, ret=%d\n", __func__, retval);
-		goto exit_free2;
-	}
-
-	if (read_reg.enabled) {
-		read_reg.read_cmd = cmd_sets;
-		retval = dsi_display_read_panel(panel, &read_reg);
-		if (retval <= 0) {
-			pr_err("%s: [%s]failed to read cmds, rc=%d\n", __func__, panel->name, retval);
-			goto exit_free3;
-		}
-	} else {
-		read_reg.read_cmd = cmd_sets;
-		retval = dsi_display_write_panel(panel, &cmd_sets);
-		if (retval) {
-			pr_err("%s: [%s] failed to send cmds, rc=%d\n", __func__, panel->name, retval);
-			goto exit_free3;
-		}
-	}
-
-	pr_debug("[%s]: mipi_procfs_write done!\n", panel->name);
-	retval = count;
-
-exit_free3:
-	dsi_panel_destroy_cmd_packets(&cmd_sets);
-exit_free2:
-	dsi_panel_dealloc_cmd_packets(&cmd_sets);
-exit_free1:
-	kfree(data);
-exit_unlock:
-	mutex_unlock(&panel->panel_lock);
-	return retval;
-}
-
-
-ssize_t mipi_reg_read(char *buf)
-{
-	struct dsi_panel *panel = g_panel;
-	int i = 0;
-	ssize_t count = 0;
-
-	mutex_lock(&panel->panel_lock);
-	if (!panel) {
-		mutex_unlock(&panel->panel_lock);
-		return -EAGAIN;
-	}
-
-	if (read_reg.enabled) {
-		for (i = 0; i < read_reg.cmds_rlen; i++) {
-			if (i == read_reg.cmds_rlen - 1) {
-				count += snprintf(buf + count, PAGE_SIZE - count, "0x%02x\n",
-				     read_reg.rbuf[i]);
-			} else {
-				count += snprintf(buf + count, PAGE_SIZE - count, "0x%02x ",
-				     read_reg.rbuf[i]);
-			}
-		}
-	}
-	mutex_unlock(&panel->panel_lock);
-
-	return count;
-}
-
-#if DSI_READ_WRITE_PANEL_DEBUG
-static ssize_t mipi_reg_procfs_write(struct file *file, const char __user *buf,
-	size_t count, loff_t *offp)
-{
-	int retval = 0;
-	char *input = NULL;
-
-	input = kmalloc(count, GFP_KERNEL);
-	if (!input) {
-		return -ENOMEM;
-	}
-	if (copy_from_user(input, buf, count)) {
-		pr_err("copy from user failed\n");
-		retval = -EFAULT;
-		goto end;
-	}
-	input[count-1] = '\0';
-	pr_debug("copy_from_user input: %s\n", input);
-
-	retval = mipi_reg_write(input, count);
-end:
-	kfree(input);
-	return retval;
-}
-
-static int mipi_reg_procfs_show(struct seq_file *m, void *v)
-{
-	struct dsi_panel *panel = (struct dsi_panel *)m->private;
-	int i = 0;
-
-	mutex_lock(&panel->panel_lock);
-
-	if (!panel) {
-		mutex_unlock(&panel->panel_lock);
-		return -EAGAIN;
-	}
-
-	if (read_reg.enabled) {
-		seq_printf(m, "return value: ");
-		for (i = 0; i < read_reg.cmds_rlen; i++) {
-			printk("0x%02x ", read_reg.rbuf[i]);
-			seq_printf(m, "0x%02x ", read_reg.rbuf[i]);
-		}
-	}
-	seq_printf(m,"\n");
-	mutex_unlock(&panel->panel_lock);
-
-	return 0;
-}
-
-static int mipi_reg_procfs_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, mipi_reg_procfs_show, g_panel);
-}
-
-const struct file_operations mipi_reg_proc_fops = {
-	.owner   = THIS_MODULE,
-	.open    = mipi_reg_procfs_open,
-	.write   = mipi_reg_procfs_write,
-	.read    = seq_read,
-	.llseek  = seq_lseek,
-	.release = single_release,
-};
-#endif
-
 int dsi_panel_drv_init(struct dsi_panel *panel,
 		       struct mipi_dsi_host *host)
 {
@@ -4069,13 +3868,6 @@ int dsi_panel_drv_init(struct dsi_panel *panel,
 			       panel->name, rc);
 		goto error_gpio_release;
 	}
-
-#if DSI_READ_WRITE_PANEL_DEBUG
-	mipi_proc_entry = proc_create(MIPI_PROC_NAME, 0, NULL, &mipi_reg_proc_fops);
-	if (!mipi_proc_entry)
-		printk(KERN_WARNING "mipi_reg: unable to create proc entry.\n");
-#endif
-
 	goto exit;
 
 error_gpio_release:
@@ -4121,13 +3913,6 @@ int dsi_panel_drv_deinit(struct dsi_panel *panel)
 
 	panel->host = NULL;
 	memset(&panel->mipi_device, 0x0, sizeof(panel->mipi_device));
-
-#if DSI_READ_WRITE_PANEL_DEBUG
-	if (mipi_proc_entry) {
-		remove_proc_entry(MIPI_PROC_NAME, NULL);
-		mipi_proc_entry = NULL;
-	}
-#endif
 
 	mutex_unlock(&panel->panel_lock);
 	return rc;
@@ -5483,55 +5268,4 @@ int dsi_panel_post_unprepare(struct dsi_panel *panel)
 error:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
-}
-
-ssize_t dsi_panel_disp_count_get(struct dsi_display *display, char *buf)
-{
-	int ret = -1;
-	struct timespec64 now_boot;
-	u64 record_end = 0;
-	/* struct timespec rtctime; */
-	struct dsi_panel *panel = NULL;
-
-	if (!display || !display->panel || !display->drm_dev) {
-		pr_err("invalid display/panel/drm_dev\n");
-		return -EINVAL;
-	}
-
-	if (buf == NULL) {
-		pr_err("dsi_panel_disp_count_get buffer is NULL!\n");
-		return -EINVAL;
-	}
-
-	panel = display->panel;
-	get_monotonic_boottime64(&now_boot);
-	/* getnstimeofday(&rtctime); */
-
-	ret = scnprintf(buf, PAGE_SIZE,
-		"panel_active=%llu\n"
-		"panel_kickoff_count=%llu\n"
-		"kernel_boottime=%llu\n"
-		"kernel_rtctime=%llu\n"
-		"kernel_days=%llu\n"
-		"bl_duration=%llu\n"
-		"bl_level_integral=%llu\n"
-		"bl_highlevel_duration=%llu\n"
-		"bl_lowlevel_duration=%llu\n"
-		"hbm_duration=%llu\n"
-		"hbm_times=%llu\n"
-		"record_end=%llu\n",
-		panel->panel_active,
-		panel->kickoff_count,
-		panel->boottime + now_boot.tv_sec,
-		panel->bootRTCtime,
-		panel->bootdays,
-		panel->bl_duration,
-		panel->bl_level_integral,
-		panel->bl_highlevel_duration,
-		panel->bl_lowlevel_duration,
-		panel->hbm_duration,
-		panel->hbm_times,
-		record_end);
-
-	return ret;
 }
