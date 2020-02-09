@@ -37,6 +37,8 @@
 
 #define DSI_MODE_MAX 5
 
+#define BUF_LEN_MAX    256
+
 enum dsi_panel_rotation {
 	DSI_PANEL_ROTATE_NONE = 0,
 	DSI_PANEL_ROTATE_HV_FLIP,
@@ -165,6 +167,14 @@ struct drm_panel_esd_config {
 	u32 groups;
 };
 
+struct dsi_read_config {
+	bool enabled;
+	struct dsi_panel_cmd_set read_cmd;
+	u32 cmds_rlen;
+	u32 valid_bits;
+	u8 rbuf[64];
+};
+
 struct dsi_panel {
 	const char *name;
 	const char *type;
@@ -207,10 +217,36 @@ struct dsi_panel {
 	bool te_using_watchdog_timer;
 	u32 qsync_min_fps;
 
+	bool dispparam_enabled;
+	u32 skip_dimmingon;
+
 	char dsc_pps_cmd[DSI_CMD_PPS_SIZE];
 	enum dsi_dms_mode dms_mode;
 
 	bool sync_broadcast_en;
+	u32 panel_on_dimming_delay;
+	struct delayed_work cmds_work;
+	u32 last_bl_lvl;
+	s32 backlight_delta;
+
+	u32 fod_off_dimming_delay;
+	ktime_t fod_hbm_off_time;
+	ktime_t fod_backlight_off_time;
+
+	u32 panel_p3_mode;
+	u32 close_crc;
+
+	bool elvss_dimming_check_enable;
+	struct dsi_read_config elvss_dimming_cmds;
+	struct dsi_panel_cmd_set elvss_dimming_offset;
+	struct dsi_panel_cmd_set hbm_fod_on;
+	struct dsi_panel_cmd_set hbm_fod_off;
+
+	u8 panel_read_data[BUF_LEN_MAX];
+
+	bool fod_backlight_flag;
+	u32 fod_target_backlight;
+	bool fod_flag;
 	int power_mode;
 	enum dsi_panel_physical_type panel_type;
 
