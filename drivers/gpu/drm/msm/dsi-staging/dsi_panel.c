@@ -24,6 +24,13 @@
 #include "dsi_ctrl_hw.h"
 #include "dsi_display.h"
 #include "dsi_parser.h"
+
+#define DSI_READ_WRITE_PANEL_DEBUG 1
+#if DSI_READ_WRITE_PANEL_DEBUG
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+#endif
+
 #include "dsi_panel_mi.h"
 
 #include <linux/msm_drm_notify.h>
@@ -56,6 +63,13 @@ int dsi_display_read_panel(struct dsi_panel *panel, struct dsi_read_config *read
 static int string_merge_into_buf(const char *str, int len, char *buf);
 
 static struct dsi_panel *g_panel;
+
+#if DSI_READ_WRITE_PANEL_DEBUG
+static int string_merge_into_buf(const char *str, int len, char *buf);
+static struct dsi_read_config read_reg;
+static struct proc_dir_entry *mipi_proc_entry = NULL;
+#define MIPI_PROC_NAME "mipi_reg"
+#endif
 
 enum dsi_dsc_ratio_type {
 	DSC_8BPC_8BPP,
@@ -3700,6 +3714,7 @@ void dsi_panel_put(struct dsi_panel *panel)
 	kfree(panel);
 }
 
+#if DSI_READ_WRITE_PANEL_DEBUG
 static int dsi_display_write_panel(struct dsi_panel *panel,
 				struct dsi_panel_cmd_set *cmd_sets)
 {
@@ -3747,6 +3762,147 @@ static int dsi_display_write_panel(struct dsi_panel *panel,
 error:
 	return rc;
 }
+
+static ssize_t mipi_reg_procfs_write (struct file *file, const char __user *buf,
+	size_t count, loff_t *offp)
+{
+	struct dsi_panel_cmd_set cmd_sets = {0, 0, 0, 0, NULL};
+	struct seq_file *seq = (struct seq_file *)file->private_data;
+	struct dsi_panel *panel = (struct dsi_panel *)seq->private;
+	int retval = 0, dlen = 0;
+	u32 packet_count = 0;
+	u8 *tmp = NULL, *p_tmp = NULL, *data = NULL;
+	u8 pbuf[2];
+
+	mutex_lock(&panel->panel_lock);
+
+	if (!panel || !panel->panel_initialized) {
+		pr_err("[LCD] panel not ready!\n");
+		mutex_unlock(&panel->panel_lock);
+		return -EAGAIN;
+	}
+
+	tmp = kzalloc(count, GFP_KERNEL);
+	if (!tmp) {
+		mutex_unlock(&panel->panel_lock);
+		return -ENOMEM;
+	}
+	if (copy_from_user(tmp, buf, count)) {
+		retval = -EFAULT;
+		goto exit_free1;
+	}
+	tmp[count-1] = '\0';
+
+	pr_debug("%s: copy_from_user buf: %s\n", __func__, tmp);
+
+	p_tmp = tmp;
+	memcpy(pbuf, p_tmp, 2);
+	read_reg.enabled = simple_strtol(pbuf, NULL, 10);
+	p_tmp = p_tmp + 3;
+	memcpy(pbuf, p_tmp, 2);
+	read_reg.cmds_rlen = simple_strtol(pbuf, NULL, 10);
+	p_tmp = p_tmp + 3;
+
+	data = kzalloc(count - 6, GFP_KERNEL);
+	if (!data) {
+		retval = -ENOMEM;
+		goto exit_free1;
+	}
+	data[count-6-1] = '\0';
+	dlen = string_merge_into_buf(p_tmp, count - 6, data);
+	if (dlen <= 0)
+		goto exit_free2;
+	retval = dsi_panel_get_cmd_pkt_count(data, dlen, &packet_count);
+	if (!packet_count) {
+		pr_err("%s: get pkt count failed!\n", __func__);
+		goto exit_free2;
+	}
+	if (cmd_sets.cmds) {
+		kfree(cmd_sets.cmds);
+		cmd_sets.cmds = NULL;
+	}
+
+
+	retval = dsi_panel_alloc_cmd_packets(&cmd_sets, packet_count);
+	if (retval) {
+		pr_err("%s: failed to allocate cmd packets, ret=%d\n", __func__, retval);
+		goto exit_free2;
+	}
+
+	retval = dsi_panel_create_cmd_packets(data, dlen, packet_count,
+						  cmd_sets.cmds);
+	if (retval) {
+		pr_err("%s: failed to create cmd packets, ret=%d\n", __func__, retval);
+		goto exit_free3;
+	}
+
+	if (read_reg.enabled) {
+		read_reg.read_cmd = cmd_sets;
+		retval = dsi_display_read_panel(panel, &read_reg);
+		if (retval <= 0) {
+			pr_err("%s: [%s]failed to read cmds, rc=%d\n", __func__, panel->name, retval);
+			goto exit_free4;
+		}
+	} else {
+		read_reg.read_cmd = cmd_sets;
+		retval = dsi_display_write_panel(panel, &cmd_sets);
+		if (retval) {
+			pr_err("%s: [%s] failed to send cmds, rc=%d\n", __func__, panel->name, retval);
+			goto exit_free4;
+		}
+	}
+
+	pr_info("[%s]: mipi_procfs_write done!\n", panel->name);
+	retval = count;
+
+exit_free4:
+	dsi_panel_destroy_cmd_packets(&cmd_sets);
+exit_free3:
+	dsi_panel_dealloc_cmd_packets(&cmd_sets);
+exit_free2:
+	kfree(data);
+exit_free1:
+	kfree(tmp);
+	mutex_unlock(&panel->panel_lock);
+	return retval;
+}
+static int mipi_reg_procfs_show(struct seq_file *m, void *v)
+{
+	struct dsi_panel *panel = (struct dsi_panel *)m->private;
+	int i = 0;
+	mutex_lock(&panel->panel_lock);
+
+	if (!panel) {
+		mutex_unlock(&panel->panel_lock);
+		return -EAGAIN;
+	}
+
+	if (read_reg.enabled) {
+		seq_printf(m, "return value: ");
+		for (i = 0; i < read_reg.cmds_rlen; i++) {
+			printk("0x%02x ", read_reg.rbuf[i]);
+			seq_printf(m, "0x%02x ", read_reg.rbuf[i]);
+		}
+	}
+	seq_printf(m, "\n");
+	mutex_unlock(&panel->panel_lock);
+	return 0;
+}
+
+static int mipi_reg_procfs_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, mipi_reg_procfs_show, g_panel);
+}
+
+const struct file_operations mipi_reg_proc_fops = {
+	.owner   = THIS_MODULE,
+	.open    = mipi_reg_procfs_open,
+	.write   = mipi_reg_procfs_write,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = single_release,
+};
+#endif
 
 int dsi_panel_drv_init(struct dsi_panel *panel,
 		       struct mipi_dsi_host *host)
@@ -3800,6 +3956,12 @@ int dsi_panel_drv_init(struct dsi_panel *panel,
 			       panel->name, rc);
 		goto error_gpio_release;
 	}
+
+#if DSI_READ_WRITE_PANEL_DEBUG
+	mipi_proc_entry = proc_create(MIPI_PROC_NAME, 0, NULL, &mipi_reg_proc_fops);
+	if (!mipi_proc_entry)
+		printk(KERN_WARNING "mipi_reg: unable to create proc entry.\n");
+#endif
 
 	goto exit;
 
@@ -3892,6 +4054,13 @@ int dsi_panel_drv_deinit(struct dsi_panel *panel)
 
 	panel->host = NULL;
 	memset(&panel->mipi_device, 0x0, sizeof(panel->mipi_device));
+
+#if DSI_READ_WRITE_PANEL_DEBUG
+	if (mipi_proc_entry) {
+		remove_proc_entry(MIPI_PROC_NAME, NULL);
+		mipi_proc_entry = NULL;
+	}
+#endif
 
 	mutex_unlock(&panel->panel_lock);
 	return rc;
