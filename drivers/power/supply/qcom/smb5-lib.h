@@ -458,6 +458,7 @@ struct smb_charger {
 	int			*pd_disabled;
 	enum smb_mode		mode;
 	struct smb_chg_freq	chg_freq;
+	int			smb_version;
 	int			otg_delay_ms;
 	int			*weak_chg_icl_ua;
 	bool			pd_not_supported;
